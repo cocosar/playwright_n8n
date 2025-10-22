@@ -1,0 +1,23 @@
+{
+  "name": "playwright_n8n",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {},
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cocosar/playwright_n8n.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/cocosar/playwright_n8n/issues"
+  },
+  "homepage": "https://github.com/cocosar/playwright_n8n#readme",
+  "devDependencies": {
+    "@playwright/test": "^1.56.1",
+    "@types/node": "^24.9.1"
+  }
+}
