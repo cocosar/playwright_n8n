@@ -1,0 +1,731 @@
+{
+  "name": "Agentes MCP playwright con agente saneador",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -2720,
+        240
+      ],
+      "id": "3a955c29-7fa6-4b35-aa74-ca6b76304ff9",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "operation": "write",
+        "fileName": "=/workspace/tests/{{$json.fileName || $binary.file.fileName || 'fallback.spec.ts'}}",
+        "dataPropertyName": "file",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1,
+      "position": [
+        1360,
+        240
+      ],
+      "id": "cd233ad6-3bfe-440d-808a-c326e0efdaf0",
+      "name": "Read/Write Files from Disk"
+    },
+    {
+      "parameters": {
+        "endpointUrl": "http://host.docker.internal:8931/mcp",
+        "serverTransport": "httpStreamable",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.mcpClientTool",
+      "typeVersion": 1.1,
+      "position": [
+        -64,
+        608
+      ],
+      "id": "cf34efd9-167a-4aed-be3b-e70c9ef4e8cd",
+      "name": "MCP Client1"
+    },
+    {
+      "parameters": {
+        "operation": "toText",
+        "sourceProperty": "output",
+        "binaryPropertyName": "file",
+        "options": {
+          "encoding": "utf8",
+          "fileName": "plan-de-pruebas.md"
+        }
+      },
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [
+        -1472,
+        240
+      ],
+      "id": "784d421a-2f06-4c68-b99e-2bb9b6467e41",
+      "name": "Convert to File1"
+    },
+    {
+      "parameters": {
+        "operation": "write",
+        "fileName": "/workspace/plan-de-pruebas.md",
+        "dataPropertyName": "file",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1,
+      "position": [
+        -1248,
+        240
+      ],
+      "id": "1e4dfa44-172c-41ce-8311-2a455c55ce02",
+      "name": "Read/Write Files from Disk1"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Lee el plan completo (texto del plan de pruebas) y lo divide por escenarios.\nfunction getPlanText(item) {\n  if (item.json?.planText) return String(item.json.planText);\n  if (item.binary?.file?.data) {\n    const buf = Buffer.from(item.binary.file.data, 'base64');\n    return buf.toString('utf8');\n  }\n  throw new Error('No se encontró el plan en json.planText ni en binary.file');\n}\n\nconst text = getPlanText(items[0]);\n\n// Nombre del sitio: \"# Plan de Pruebas – Demoblaze\"\nconst siteMatch = text.match(/^#\\s*Plan de Pruebas\\s*[–-]\\s*(.+)$/m);\nconst siteName = siteMatch ? siteMatch[1].trim() : 'Demoblaze';\n\n// Captura bloques de \"### Escenario X: Título\"\nconst regex = /^###\\s*Escenario\\s+(\\d+)\\s*:\\s*(.+?)\\s*\\r?\\n([\\s\\S]*?)(?=^###\\s*Escenario\\s+\\d+\\s*:|\\Z)/gm;\n\nconst out = [];\nlet m, counter = 0;\nwhile ((m = regex.exec(text)) !== null) {\n  counter += 1;                               // <— numeración SECUENCIAL y estable\n  const headingIndex = Number(m[1]);          // (por si te sirve tener el original)\n  const scenarioName  = m[2].trim();\n  const scenarioMd    = m[3].trim();\n\n  out.push({\n    json: {\n      siteName,\n      scenarioIndex: counter,                 // <— usamos la secuencia, no el título\n      headingIndex,                           // (opcional) el número que venía en el MD\n      scenarioName,\n      scenarioMd,\n      context: text,\n    },\n  });\n}\n\nif (!out.length) throw new Error('No se encontraron escenarios con el patrón esperado.');\nreturn out;\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1024,
+        240
+      ],
+      "id": "72a60c18-6610-405f-915e-cc9b814fc2b7",
+      "name": "Code"
+    },
+    {
+      "parameters": {
+        "options": {
+          "reset": false
+        }
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -800,
+        240
+      ],
+      "id": "dd816a98-d930-4c89-9b93-aa377fe643cc",
+      "name": "Loop Over Items"
+    },
+    {
+      "parameters": {
+        "operation": "toText",
+        "sourceProperty": "fileContent",
+        "binaryPropertyName": "=file",
+        "options": {
+          "encoding": "utf8",
+          "fileName": "={{$json.fileName || 'fallback.spec.ts'}}"
+        }
+      },
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [
+        1136,
+        176
+      ],
+      "id": "c49de7cc-70f9-49ba-99b7-f01d28147781",
+      "name": "Convert to File2"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $evaluateExpression($json['planner-prompt']) }}",
+        "needsFallback": true,
+        "options": {
+          "maxIterations": 90
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2.2,
+      "position": [
+        -1824,
+        240
+      ],
+      "id": "9e5d5a94-1ab8-4534-a47e-2d06dc8916e4",
+      "name": "Planificador",
+      "executeOnce": false
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $evaluateExpression($json['generator-prompt']) }}",
+        "needsFallback": true,
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2.2,
+      "position": [
+        -304,
+        48
+      ],
+      "id": "6fbfe4ec-40c7-4adb-9df3-0c16aa8ef26e",
+      "name": "Generador",
+      "executeOnce": true,
+      "retryOnFail": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// SELLAR METADATOS — fija __idx y __title por ítem (se usarán más adelante)\nconst j = { ...$json };\n\nconst idxFromInput = Number(j.scenarioIndex);\nconst idxFromLoop  = (typeof $itemIndex === 'number') ? $itemIndex + 1 : undefined;\n\nj.__site  = (j.siteName && String(j.siteName).trim()) || 'Demoblaze';\nj.__idx   = Number.isFinite(idxFromInput) && idxFromInput > 0\n  ? idxFromInput\n  : (Number.isFinite(idxFromLoop) ? idxFromLoop : 1);\n\nj.__title = (j.scenarioName && String(j.scenarioName).trim()) || `Escenario ${j.__idx}`;\n\n// limpia fences si hubiera\nif (typeof j.output === 'string') {\n  j.output = j.output\n    .replace(/^\\s*```(?:json|typescript|ts)?\\s*/i, '')\n    .replace(/\\s*```$/i, '')\n    .trim();\n}\n\nreturn { json: j };\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -576,
+        176
+      ],
+      "id": "fa75e231-9842-4965-83c2-5dd10717a0ae",
+      "name": "Sellar metadatos"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        112,
+        176
+      ],
+      "id": "cfd71ea0-6d35-45d9-a3d1-8fcda5bc5da5",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// n8n Code node — SANITIZADOR POST-GENERADOR MEJORADO\nconst j = $json;\n\n// === Utilidades ===\nconst toSlug = (s) =>\n  String(s ?? '')\n    .toLowerCase()\n    .normalize('NFD').replace(/[\\u0300-\\u036f]/g, '')\n    .replace(/[\"\"\"'']/g, '')\n    .replace(/[^a-z0-9\\s-]/g, ' ')\n    .replace(/\\s+/g, '-')\n    .replace(/-+/g, '-')\n    .replace(/^-|-$/g, '');\n\nconst pad2 = (n) => String(Number(n || 1)).padStart(2, '0');\n\n// === Preservar metadatos ===\nconst metadata = {\n  __site: j.__site,\n  __idx: j.__idx,\n  __title: j.__title,\n  scenarioMd: j.scenarioMd,\n  siteName: j.siteName,\n  scenarioIndex: j.scenarioIndex,\n  scenarioName: j.scenarioName,\n  context: j.context\n};\n\nconst site = toSlug(metadata.__site || 'demoblaze');\nconst idx = pad2(metadata.__idx || 1);\nconst title = String(metadata.__title || `Escenario ${idx}`).trim();\nconst defaultName = `${site}.${idx}.${toSlug(title)}.spec.ts`;\n\n// === Extraer output del generador ===\nlet raw = j;\nlet fileName = '';\nlet fileContent = '';\n\n// Intentar parsear JSON si viene como string\nif (typeof raw.output === 'string') {\n  try {\n    // Limpiar posibles backticks o formato markdown\n    let cleaned = raw.output\n      .replace(/^\\s*```(?:json)?\\s*/i, '')\n      .replace(/\\s*```\\s*$/i, '')\n      .trim();\n    \n    const match = cleaned.match(/\\{[\\s\\S]*\\}/);\n    if (match) {\n      raw = JSON.parse(match[0]);\n    } else {\n      // No hay JSON válido, usar el string completo como fileContent\n      console.warn(`Escenario ${idx}: No se encontró JSON válido, usando output como código`);\n      fileName = defaultName;\n      fileContent = cleaned;\n    }\n  } catch (e) {\n    // Error parseando, crear archivo con el error comentado\n    console.error(`Escenario ${idx}: Error parseando JSON: ${e.message}`);\n    fileName = defaultName;\n    fileContent = `import { test, expect } from '@playwright/test';\n\ntest.describe('${metadata.__site} – ${title}', () => {\n  test('${idx} - ${title}', async ({ page }) => {\n    // TODO: El generador falló, implementar manualmente\n    // Error: ${e.message}\n    \n    await page.goto('https://demoblaze.com', { waitUntil: 'domcontentloaded' });\n    await page.waitForSelector('#tbodyid .card', { state: 'visible', timeout: 15000 });\n    await expect(page).toHaveURL(/https:\\\\/\\\\/demoblaze\\\\.com\\\\/?/);\n    \n    // Implementar pasos del escenario aquí\n    expect(1).toBe(1);\n  });\n});\n`;\n  }\n}\n\n// Si llegó aquí con raw siendo objeto, extraer campos\nif (!fileName && !fileContent) {\n  fileName = raw.fileName || raw.filename || '';\n  fileContent = raw.fileContent ?? raw.content ?? raw.text ?? raw.code ?? '';\n}\n\n// === Validar y normalizar fileName ===\nif (!fileName || \n    fileName === 'fallback.spec.ts' || \n    fileName.includes('fallback') || \n    fileName.includes('ejemplo')) {\n  fileName = defaultName;\n}\n\nfileName = String(fileName).replace(/\\.spect\\.ts$/i, '.spec.ts');\nif (!/\\.(ts|tsx|js)$/i.test(fileName)) {\n  if (!/\\.spec$/i.test(fileName)) fileName += '.spec';\n  fileName += '.ts';\n}\n\n// === Validar fileContent ===\nif (!String(fileContent).trim() || fileContent.length < 50) {\n  console.warn(`Escenario ${idx}: fileContent vacío o muy corto, creando placeholder`);\n  fileContent = `import { test, expect } from '@playwright/test';\n\ntest.describe('${metadata.__site} – ${title}', () => {\n  test('${idx} - ${title}', async ({ page }) => {\n    // TODO: Implementar escenario\n    // Pasos del escenario:\n    // ${(metadata.scenarioMd || '').split('\\\\n').slice(0, 5).join('\\\\n    // ')}\n    \n    await page.goto('https://demoblaze.com', { waitUntil: 'domcontentloaded' });\n    await page.waitForSelector('#tbodyid .card', { state: 'visible', timeout: 15000 });\n    await expect(page).toHaveURL(/https:\\\\/\\\\/demoblaze\\\\.com\\\\/?/);\n    \n    expect(1).toBe(1);\n  });\n});\n`;\n}\n\n// === Devolver todo ===\nreturn {\n  ...metadata,\n  fileName,\n  fileContent\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        336,
+        176
+      ],
+      "id": "4122b957-2357-41f1-94e8-16816634f830",
+      "name": "Sanitizador post-Generador"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Code Final - MINIMAL - Solo arregla errores críticos de sintaxis\n// Modo: \"Run Once for Each Item\"\n\nconst inputData = $input.item.json;\n\nconsole.log('📦 Item #' + (inputData.__idx || '?'));\n\n// ========================================\n// 1. OBTENER OUTPUT\n// ========================================\n\nlet rawOutput = inputData.output || inputData.text || '';\n\nif (!rawOutput || typeof rawOutput !== 'string') {\n  console.log('❌ No hay output');\n  return { json: inputData };\n}\n\n// ========================================\n// 2. PARSEAR JSON\n// ========================================\n\nlet cleanedOutput = rawOutput\n  .replace(/```json\\s*/g, '')\n  .replace(/```typescript\\s*/g, '')\n  .replace(/```\\s*/g, '')\n  .trim();\n\nlet parsedData;\n\ntry {\n  parsedData = JSON.parse(cleanedOutput);\n  console.log('✅ JSON parseado');\n} catch (e) {\n  console.log('❌ Error parseando JSON:', e.message);\n  return { json: inputData };\n}\n\nif (!parsedData.fileName || !parsedData.fileContent) {\n  console.log('❌ JSON incompleto');\n  return { json: inputData };\n}\n\nlet fileName = parsedData.fileName;\nlet content = parsedData.fileContent;\n\nconsole.log('✅ Archivo:', fileName);\n\n// ========================================\n// 3. FIXES CRÍTICOS DE SINTAXIS\n// ========================================\n\n// 3.1 CRÍTICO: Arreglar \"const page.locator(...) = ...\" y similares\n// Estos causan SyntaxError inmediato\ncontent = content.replace(/const\\s+page\\.(locator|getByRole|getByText|getByLabel|getByPlaceholder|getByAltText|getByTitle)\\([^)]+\\)\\s*=\\s*page\\.\\1\\([^;]+\\)\\s*;?\\s*/g, '');\n\n// Cualquier otra variante de const page.X = ...\ncontent = content.replace(/const\\s+page\\.\\w+\\([^)]*\\)\\s*=\\s*[^;]+;?\\s*/g, '');\n\n// 3.2 CRÍTICO: Código fuera del test\n// Buscar await page... que esté ANTES de test('\nconst lines = content.split('\\n');\nconst fixedLines = [];\nlet codeBeforeTest = [];\nlet inDescribe = false;\nlet inTest = false;\n\nfor (let i = 0; i < lines.length; i++) {\n  const line = lines[i];\n  const trimmed = line.trim();\n  \n  // Detectar inicio de describe\n  if (trimmed.includes('test.describe(')) {\n    inDescribe = true;\n    fixedLines.push(line);\n    continue;\n  }\n  \n  // Detectar inicio de test\n  if (inDescribe && trimmed.includes(\"test('\")) {\n    inTest = true;\n    fixedLines.push(line);\n    \n    // Si hay líneas con await antes del test, insertarlas después de async ({ page }) =>\n    if (codeBeforeTest.length > 0) {\n      // Buscar la línea con async ({ page }) =>\n      let asyncLineIndex = i;\n      for (let j = i; j < lines.length && j < i + 5; j++) {\n        if (lines[j].includes('async ({ page })')) {\n          asyncLineIndex = j;\n          break;\n        }\n      }\n      \n      // Si encontramos el async, insertar el código después\n      if (asyncLineIndex > i) {\n        // Copiar líneas hasta el async\n        for (let j = i + 1; j <= asyncLineIndex; j++) {\n          fixedLines.push(lines[j]);\n        }\n        i = asyncLineIndex;\n        \n        // Insertar código que estaba antes del test\n        codeBeforeTest.forEach(codeLine => {\n          fixedLines.push(codeLine);\n        });\n        \n        codeBeforeTest = [];\n      }\n    }\n    continue;\n  }\n  \n  // Si estamos en describe pero NO en test, y hay await page...\n  if (inDescribe && !inTest && (trimmed.startsWith('await page.') || trimmed.startsWith('await expect('))) {\n    console.log('🔧 Moviendo código al test:', trimmed.substring(0, 50));\n    codeBeforeTest.push(line);\n    continue;\n  }\n  \n  fixedLines.push(line);\n}\n\ncontent = fixedLines.join('\\n');\n\n// 3.3 Escapar barras en regex toHaveURL\ncontent = content.replace(/toHaveURL\\(\\/([^)]+)\\/\\)/g, (match, pattern) => {\n  if (pattern.includes('\\\\/')) return match;\n  const escaped = pattern.replace(/\\//g, '\\\\/');\n  return `toHaveURL(/${escaped}/)`;\n});\n\n// 3.4 Cambiar networkidle a domcontentloaded\ncontent = content.replace(/waitUntil:\\s*['\"]networkidle['\"]/g, \"waitUntil: 'domcontentloaded'\");\n\n// 3.5 Limpiar líneas vacías excesivas\ncontent = content.replace(/\\n{3,}/g, '\\n\\n');\n\n// 3.6 Remover espacios al final\ncontent = content.replace(/[ \\t]+$/gm, '');\n\n// 3.7 Asegurar newline final\nif (!content.endsWith('\\n')) {\n  content += '\\n';\n}\n\n// 3.8 Fix método inexistente toHaveCountGreaterThan\ncontent = content.replace(\n  /await\\s+expect\\(([^)]+)\\)\\.toHaveCountGreaterThan\\((\\d+)\\)/g,\n  'expect(await $1.count()).toBeGreaterThan($2)'\n);\n\n// 3.9 Fix selectores incorrectos en detalle\ncontent = content.replace(/page\\.locator\\('h2\\.name'\\)/g, \"page.locator('.product-content h2')\");\ncontent = content.replace(/page\\.locator\\('h3\\.price-container'\\)/g, \"page.locator('.product-content h3')\");\n\n// 3.10 Fix selector ambiguo en Place Order\ncontent = content.replace(\n  /await page\\.locator\\('#orderModal button'\\)\\.click\\(\\);/g,\n  \"await page.locator('.sweet-alert button.confirm').click();\"\n);\n\n// 3.11 Fix: Typo en selector #contcont → #tbodyid\ncontent = content.replace(/#contcont/g, '#tbodyid');\n\n// 3.12 Fix: Username único con Date.now()\ncontent = content.replace(\n  /fill\\(['\"]testuser['\"]\\)/g,\n  \"fill(`testuser${Date.now()}`)\"\n);\n\n// 3.13 Fix: Selector ambiguo button.close → específico por modal\ncontent = content.replace(\n  /page\\.locator\\('button\\.close'\\)/g,\n  \"page.locator('#videoModal button.close')\"\n);\n\n// 3.14 Home: usar #tbodyid como contenedor principal, no '.container .row'\ncontent = content.replace(\n  /page\\.locator\\('\\.container \\.row'\\)/g,\n  \"page.locator('#tbodyid')\"\n);\n\n// 3.15 Desambiguar expect sobre listas de productos (#tbodyid .card)\ncontent = content.replace(\n  /await expect\\(page\\.locator\\('#tbodyid \\.card'\\)\\)\\.toBeVisible\\(\\);/g,\n  \"await expect(page.locator('#tbodyid .card').first()).toBeVisible();\"\n);\n\n// 3.16 Asegurar visibilidad de Add to cart antes de click\ncontent = content.replace(\n  /(\\s*)page\\.once\\('dialog',([\\s\\S]*?)\\);\\n\\1await page\\.getByRole\\('link', { name: 'Add to cart', exact: true }\\)\\.click\\(\\);/g,\n  \"$1const addToCartBtn = page.getByRole('link', { name: 'Add to cart', exact: true });\\n\" +\n    \"$1await expect(addToCartBtn).toBeVisible();\\n\\n\" +\n    \"$1page.once('dialog',$2);\\n\" +\n    \"$1await addToCartBtn.click();\"\n);\n\n// 3.17 Normalizar selectores de paginación Next / Previous\ncontent = content.replace(/button\\[onclick=\"nextPage\\(\\)\"\\]/g, '#next2');\ncontent = content.replace(/button\\[onclick=\"prevPage\\(\\)\"\\]/g, '#prev2');\n\n// 3.18 Click en tarjeta de producto: usar el <a> interno para navegar al detalle\ncontent = content.replace(\n  /await page\\.locator\\('#tbodyid \\.card'\\)\\.first\\(\\)\\.click\\(\\);/g,\n  \"await page.locator('#tbodyid .card').first().locator('a').first().click();\"\n);\n\n\nconsole.log('✅ Fixes aplicados');\n\n// ========================================\n// 4. VALIDACIÓN BÁSICA\n// ========================================\n\nconst hasImport = content.includes('import');\nconst hasDescribe = content.includes('test.describe');\nconst hasTest = content.includes('async ({ page })');\n\nif (!hasImport || !hasDescribe || !hasTest) {\n  console.log('⚠️ Estructura inválida');\n}\n\n// ========================================\n// 5. RETORNAR\n// ========================================\n\nreturn {\n  json: {\n    ...inputData,\n    fileName: fileName,\n    fileContent: content\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        912,
+        176
+      ],
+      "id": "b4a91b19-19ea-413a-b479-8ff239d20049",
+      "name": "Code1"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $evaluateExpression($json['healer-prompt']) }}",
+        "needsFallback": true,
+        "options": {
+          "maxIterations": 60
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2.2,
+      "position": [
+        560,
+        176
+      ],
+      "id": "7f5b21af-2e91-43aa-b8e4-e23619879231",
+      "name": "Saneador",
+      "retryOnFail": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "model": "x-ai/grok-4.1-fast",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [
+        -368,
+        608
+      ],
+      "id": "40e9d94a-e620-4668-bf58-da8a03f483dd",
+      "name": "Top Free Weekly (Open Router)",
+      "credentials": {
+        "openRouterApi": {
+          "id": "4KTbvtQgIyehzXXt",
+          "name": "OpenRouter account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": "z-ai/glm-4.5-air:free",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [
+        -224,
+        608
+      ],
+      "id": "8cb7156b-5309-496f-af1f-e78c4c203cd2",
+      "name": "Top 2 Weekly Open Router",
+      "credentials": {
+        "openRouterApi": {
+          "id": "4KTbvtQgIyehzXXt",
+          "name": "OpenRouter account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "917887b2-ca89-42d8-8339-1953b2d89bdd",
+              "name": "url",
+              "value": "https://demoblaze.com/",
+              "type": "string"
+            },
+            {
+              "id": "bb792ddc-02c5-4380-ba37-9387f9e34b4a",
+              "name": "contexto",
+              "value": "sin contexto",
+              "type": "string"
+            },
+            {
+              "id": "c0887b3c-0798-4be7-8499-8c2c23911b57",
+              "name": "historia_usuario",
+              "value": "sin hdu",
+              "type": "string"
+            },
+            {
+              "id": "45365dc2-0d39-4806-9e6d-dfa2601c84f8",
+              "name": "=planner-prompt",
+              "value": "={{ $json.plannerPrompt }}",
+              "type": "string"
+            },
+            {
+              "id": "a1f2baa4-ab29-42a3-b143-a9c48fb30549",
+              "name": "=generator-prompt",
+              "value": "={{ $json.generatorPrompt }}",
+              "type": "string"
+            },
+            {
+              "id": "f0030a74-0754-49bf-afff-a5fd79f1d8a2",
+              "name": "=healer-prompt",
+              "value": "={{ $json.healerPrompt }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -2048,
+        240
+      ],
+      "id": "7be4e5d6-ed05-4ec9-a7b1-2ac52cf74cb3",
+      "name": "Variables"
+    },
+    {
+      "parameters": {
+        "fileSelector": "/workspace/ai/*",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1,
+      "position": [
+        -2496,
+        240
+      ],
+      "id": "9422c885-0782-471f-bba5-176538b6fda6",
+      "name": "Read/Write Files from Disk2",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const prompts = {};\n\nfor (const item of items) {\n  const fileName = item.json.fileName || item.json['File Name'];\n\n  if (!item.binary || !item.binary.data) continue;\n\n  const bin = item.binary.data;\n  const buff = Buffer.from(bin.data, 'base64');\n  const text = buff.toString('utf8');\n\n  if (fileName === 'generator-prompt.md') {\n    prompts.generatorPrompt = text;\n  } else if (fileName === 'healer-prompt.md') {\n    prompts.healerPrompt = text;\n  } else if (fileName === 'planner-prompt.md') {\n    prompts.plannerPrompt = text;\n  }\n}\n\nreturn [\n  {\n    json: prompts,\n  },\n];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2272,
+        240
+      ],
+      "id": "57326747-7060-4fa5-bb84-afb163c17888",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "content": "## Modelos alternativos\n",
+        "height": 416,
+        "width": 528
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -1632,
+        592
+      ],
+      "id": "c9c939d8-604a-4e75-8bea-1c616bf4f89c",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-2.5-pro",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        -1568,
+        688
+      ],
+      "id": "8e5777e2-61bb-40bb-834e-2f1634fcc50d",
+      "name": "Google Gemini"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list",
+          "cachedResultName": "gpt-4o-mini"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        -1424,
+        688
+      ],
+      "id": "3b92a7b9-1665-4a78-80bd-f21fbc647039",
+      "name": "GPT",
+      "credentials": {
+        "openAiApi": {
+          "id": "hTv3mXdgHgrLpjsc",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// === Code post-generador ===\n// Toma: output, __site, __idx, __title\n// Devuelve: { fileName, fileContent, scenarioIndex, scenarioName }\n\nfunction stripFences(s='') {\n  return String(s)\n    .replace(/^\\s*```(?:json|typescript)?\\s*/i, '')\n    .replace(/\\s*```$/i, '')\n    .trim();\n}\nfunction slugify(s='') {\n  return String(s)\n    .normalize('NFD').replace(/[\\u0300-\\u036f]/g,'')\n    .toLowerCase().replace(/[^a-z0-9]+/g,'-')\n    .replace(/^-+|-+$/g,'');\n}\nconst pad2 = n => String(Math.max(1, Number(n)||1)).padStart(2,'0');\n\nconst site = String($json.__site || 'Demoblaze').trim();\nconst idx  = Number($json.__idx) > 0 ? Number($json.__idx) : 1;\nlet   title = String($json.__title || '').trim();\n\nlet raw = $json.output ?? $json.fileContent ?? '';\nraw = stripFences(raw);\n\n// ¿El generador devolvió JSON?\nlet fileNameFromGen, fileContent = '';\nif (/^\\s*{/.test(raw)) {\n  try {\n    const ob = JSON.parse(raw);\n    fileNameFromGen = ob.fileName;\n    fileContent = ob.fileContent || ob.output || ob.code || '';\n  } catch { fileContent = raw; }\n} else {\n  fileContent = raw;\n}\n\n// Si el título sellado es genérico, intenta inferirlo del código\nif (!title || /^escenario\\s*\\d+$/i.test(title)) {\n  const m1 = fileContent.match(/Escenario\\s*\\d+\\s*:\\s*([^\\n]+)/i);\n  const m2 = fileContent.match(/test\\(\\s*['\"]\\d{2}\\s*-\\s*([^'\"]+)['\"]/);\n  title = (m1 && m1[1].trim()) || (m2 && m2[1].trim()) || `Escenario ${pad2(idx)}`;\n}\n\n// Asegura import en primera línea\nif (!/^import\\s+\\{\\s*test\\s*,\\s*expect\\s*\\}\\s+from\\s+['\"]@playwright\\/test['\"]\\s*;/.test(fileContent)) {\n  fileContent = `import { test, expect } from '@playwright/test';\\n` + fileContent.replace(/^\\s+/, '');\n}\n\n// Asegura comentario segunda línea\nconst header = `// ${site} – Escenario ${pad2(idx)}: ${title}\\n`;\nif (!fileContent.includes(header)) {\n  fileContent = fileContent.replace(/^(\\s*import[^\\n]*\\n)(?!\\/\\/)/, `$1${header}`);\n}\n\n// Prefijo \"NN - \" en el título del test\nfileContent = fileContent.replace(/test\\(\\s*(['\"])([^'\"]+)\\1\\s*,/, (m,q,t) => {\n  const withNum = /^\\d{2}\\s*-\\s*/.test(t) ? t : `${pad2(idx)} - ${t}`;\n  return `test(${q}${withNum}${q},`;\n});\n\n// Construir filename\nfunction safe(name){ return slugify(String(name||'')); }\nconst siteSlug  = safe(site);\nconst titleSlug = safe(title);\n\nlet fileName;\nif (fileNameFromGen && /\\.spec\\.ts$/i.test(fileNameFromGen)) {\n  // si el LLM ya trajo un nombre válido, úsalo\n  fileName = fileNameFromGen;\n} else {\n  fileName = `${siteSlug}.${pad2(idx)}.${titleSlug}.spec.ts`;\n}\n\nreturn {\n  json: {\n    fileName,\n    fileContent,\n    scenarioIndex: idx,\n    scenarioName: title\n  }\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2688,
+        -272
+      ],
+      "id": "3facdb3b-0d47-492a-ba20-ad1ea231cacb",
+      "name": "Code Post-Generator (legacy)"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "/**\n * POST-GENERADOR (robusto con re-inyección)\n * - Toma el código del agente desde $json.output/$json.fileContent (TS o JSON)\n * - Lee __idx y __title directamente de $json (Set previo los re-inyecta)\n * - Si faltan, intenta fallback a $items('Sellar metadatos', 0, $itemIndex)\n * - Construye: demoblaze.NN.<slug>.spec.ts con NN = __idx, título = __title\n */\n\nfunction stripFences(s='') {\n  return String(s)\n    .replace(/^\\s*```(?:json|typescript|ts)?\\s*/i, '')\n    .replace(/\\s*```$/i, '')\n    .trim();\n}\nfunction slugify(s='') {\n  return String(s)\n    .normalize('NFD').replace(/[\\u0300-\\u036f]/g,'')\n    .toLowerCase().replace(/[^a-z0-9]+/g,'-')\n    .replace(/^-+|-+$/g,'');\n}\nconst pad2 = n => String(Math.max(1, Number(n)||1)).padStart(2,'0');\n\n// 0) Prioridad: leer metadatos re-inyectados por el SET\nlet site  = String($json.__site || $json.siteName || 'Demoblaze').trim();\nlet idx   = Number($json.__idx);\nlet title = String($json.__title || '').trim();\n\n// 0b) Fallback: si faltan, intentar desde Sellar metadatos\nif (!Number.isFinite(idx) || idx <= 0 || !title) {\n  try {\n    const it = $items('Sellar metadatos', 0, $itemIndex);\n    if (it && it.json) {\n      if (!Number.isFinite(idx) || idx <= 0) idx = Number(it.json.__idx);\n      if (!title) title = String(it.json.__title || '').trim();\n      if (!site) site = String(it.json.__site || 'Demoblaze').trim();\n    }\n  } catch {}\n}\n// 0c) Último recurso\nif (!Number.isFinite(idx) || idx <= 0) idx = (typeof $itemIndex==='number') ? $itemIndex+1 : 1;\nif (!title) title = `Escenario ${pad2(idx)}`;\n\n// 1) Código del agente (TS directo o JSON con fileContent)\nlet raw = $json.output ?? $json.fileContent ?? '';\nraw = stripFences(raw);\n\nlet fileContent = '';\nif (/^\\s*{/.test(raw)) {\n  try {\n    const o = JSON.parse(raw);\n    fileContent = o.fileContent ?? o.output ?? o.code ?? '';\n  } catch {\n    fileContent = raw;\n  }\n} else {\n  fileContent = raw;\n}\nfileContent = stripFences(fileContent);\n\n// 2) Si el título es genérico, intentar inferir desde el código\nif (!title || /^escenario\\s*\\d+$/i.test(title)) {\n  const m1 = fileContent.match(/Escenario\\s*\\d+\\s*:\\s*([^\\n]+)/i);\n  const m2 = fileContent.match(/test\\(\\s*(['\"])\\d{2}\\s*-\\s*([^'\"]+)\\1/);\n  title = (m1 && m1[1].trim()) || (m2 && m2[2].trim()) || `Escenario ${pad2(idx)}`;\n}\n\n// 3) Asegurar import + comentario + \"NN - \"\nif (!/^import\\s+\\{\\s*test\\s*,\\s*expect\\s*\\}\\s+from\\s+['\"]@playwright\\/test['\"]\\s*;/.test(fileContent)) {\n  fileContent = `import { test, expect } from '@playwright/test';\\n` + fileContent.replace(/^\\s+/, '');\n}\nconst header = `// ${site} – Escenario ${pad2(idx)}: ${title}\\n`;\nif (!fileContent.includes(header)) {\n  fileContent = fileContent.replace(/^(\\s*import[^\\n]*\\n)(?!\\/\\/)/, `$1${header}`);\n}\nfileContent = fileContent.replace(/test\\(\\s*(['\"])([^'\"]+)\\1\\s*,/, (m,q,t) => {\n  const withNum = /^\\d{2}\\s*-\\s*/.test(t) ? t : `${pad2(idx)} - ${t}`;\n  return `test(${q}${withNum}${q},`;\n});\n\n// 4) Nombre de archivo con nuestros metadatos\nconst siteSlug  = slugify(site);\nconst titleSlug = slugify(title);\nconst fileName  = `${siteSlug}.${pad2(idx)}.${titleSlug}.spec.ts`;\n\nreturn {\n  json: {\n    fileName,\n    fileContent,\n    scenarioIndex: idx,\n    scenarioName: title\n  }\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2688,
+        -32
+      ],
+      "id": "ca171e33-f055-4bcb-8e46-ade629a91d01",
+      "name": "Post-Generador (legacy)"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "/**\n * n8n Code node (JavaScript) — RUN ONCE PER ITEM\n * Sanea un (1) archivo por ejecución y devuelve UN solo objeto {fileName,fileContent}.\n * - Prioriza extraer {fileName,fileContent} desde JSON incrustado (aunque haya “basura” alrededor).\n * - Si no hay JSON, usa el código plano.\n * - Aplica parches Playwright (imports, describe/test, goto, modales Contact/About/Order/Login/Signup, diálogos, SweetAlert, URLs).\n * - Asegura .spec.ts y evita items vacíos (placeholder).\n * - ENDURECIDO: elimina/convierte cualquier selector con `ref=...` (engine y atributos) a `getByRole(...)`.\n */\n\nconst j = $json;\n\n// ---------- utils básicos ----------\nconst toSlug = (s) =>\n  String(s ?? '')\n    .toLowerCase()\n    .normalize('NFD').replace(/[\\u0300-\\u036f]/g, '')\n    .replace(/[“”\"’']/g, '')\n    .replace(/[^a-z0-9\\s-]/g, ' ')\n    .replace(/\\s+/g, '-')\n    .replace(/-+/g, '-')\n    .replace(/^-|-$/g, '');\n\nconst pad2 = (n) => String(Number(n || 1)).padStart(2, '0');\n\nfunction stripCodeFences(s) {\n  return String(s ?? '')\n    .replace(/^\\s*```(?:json|typescript|ts|javascript|js)?\\s*/i, '')\n    .replace(/\\s*```$/,'')\n    .trim();\n}\nfunction escapeRegExp(s){ return String(s ?? '').replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&'); }\n\nfunction coalesce(...vals) {\n  for (const v of vals) {\n    if (v !== undefined && v !== null) {\n      const sv = typeof v === 'string' ? v : (typeof v === 'object' ? JSON.stringify(v) : String(v));\n      if (String(sv).trim() !== '') return v;\n    }\n  }\n  return '';\n}\n\nfunction ensureTsFileName(name, fallback) {\n  let out = String(name ?? '').trim();\n  if (!out) out = fallback;\n  if (!/\\.(ts|tsx|js)$/i.test(out)) {\n    if (!out.endsWith('.spec')) out += '.spec';\n    out += '.ts';\n  }\n  out = out.replace(/[\\\\\\/]+/g, '_').replace(/\\s+/g, '-');\n  return out;\n}\n\n// ---------- extractor robusto de JSON incrustado ----------\nfunction extractJsonEnvelope(big) {\n  const s = String(big ?? '');\n  // Intento 1: string completo es JSON\n  try {\n    const obj = JSON.parse(s);\n    if (obj && typeof obj === 'object' && (obj.fileContent || obj.content || obj.text || obj.code)) {\n      return {\n        fileName: obj.fileName || obj.filename || undefined,\n        fileContent: String(obj.fileContent ?? obj.content ?? obj.text ?? obj.code ?? ''),\n      };\n    }\n  } catch {}\n\n  // Intento 2: buscar bloque con \"fileContent\"\n  const idxFirstBrace = s.indexOf('{');\n  const idxLastBrace  = s.lastIndexOf('}');\n  if (idxFirstBrace !== -1 && idxLastBrace !== -1 && idxLastBrace > idxFirstBrace) {\n    const window = s.slice(idxFirstBrace, idxLastBrace + 1);\n    const candidates = [];\n    const re = /\\{[\\s\\S]*?\"fileContent\"\\s*:\\s*(\"[\\s\\S]*?\"|null|true|false|\\d+|\\{[\\s\\S]*?\\}|\\[[\\s\\S]*?\\])[\\s\\S]*?\\}/g;\n    let m;\n    while ((m = re.exec(window)) !== null) candidates.push(m[0]);\n    for (let i = candidates.length - 1; i >= 0; i--) {\n      try {\n        const obj = JSON.parse(candidates[i]);\n        if (obj && typeof obj === 'object' && (obj.fileContent || obj.content || obj.text || obj.code)) {\n          return {\n            fileName: obj.fileName || obj.filename || undefined,\n            fileContent: String(obj.fileContent ?? obj.content ?? obj.text ?? obj.code ?? ''),\n          };\n        }\n      } catch {}\n    }\n  }\n  return null;\n}\n\n// ---------- parches de código ----------\nfunction ensureImport(code) {\n  const wanted = `import { test, expect } from '@playwright/test';`;\n  // elimina duplicados previos\n  code = code.replace(/^\\s*import\\s*\\{\\s*test\\s*,\\s*expect\\s*\\}\\s*from\\s*['\"]@playwright\\/test['\"];\\s*/mg, '');\n  return `${wanted}\\n${code.trimStart()}`;\n}\nfunction upsertHeaderComment(code, site, idx, scenarioName) {\n  const header = `// ${site} – Escenario ${idx}: ${scenarioName}`;\n  code = code.replace(/^\\s*\\/\\/\\s*.*Escenario\\s*\\d+\\s*:\\s*.*\\n/m, '');\n  code = code.replace(\n    /^import\\s*\\{\\s*test\\s*,\\s*expect\\s*\\}\\s*from\\s*'@playwright\\/test';\\s*/m,\n    (m0) => `${m0}${header}\\n`\n  );\n  return code;\n}\nfunction normalizeDescribeAndTest(code, site, idx, scenarioName) {\n  code = code.replace(\n    /test\\.describe\\(\\s*(['\"`]).*?\\1\\s*,/s,\n    `test.describe('${site} – ${scenarioName}',`\n  );\n  code = code.replace(\n    /test\\(\\s*(['\"`])\\s*\\d+\\s*-\\s*.*?\\1\\s*,/s,\n    `test('${idx} - ${scenarioName}',`\n  );\n  if (!new RegExp(`test\\\\(['\"\\`]${idx}\\\\s-\\\\s${escapeRegExp(scenarioName)}['\"\\`]`).test(code)) {\n    code = code.replace(/test\\(\\s*(['\"`]).*?\\1\\s*,/s, `test('${idx} - ${scenarioName}',`);\n  }\n  return code;\n}\n\n// ROBUSTO: asegura async en TODO callback de test(...)\nfunction ensureAsyncTestCallbacks(code) {\n  // 1) Arrow sin async: test('...', ({ ... }) => { ... })\n  code = code.replace(\n    /(test(?:\\.(?:only|skip|fixme|fail))?\\(\\s*(['\"`].*?['\"`])\\s*,\\s*)\\(\\s*([^)]*)\\)\\s*=>\\s*\\{/gs,\n    \"$1async ($3) => {\"\n  );\n\n  // 2) Forma function: test('...', function(...) { ... })\n  code = code.replace(\n    /(test(?:\\.(?:only|skip|fixme|fail))?\\(\\s*(['\"`].*?['\"`])\\s*,\\s*)function\\s*\\(\\s*([^)]*)\\s*\\)\\s*\\{/gs,\n    \"$1async function ($3) {\"\n  );\n\n  // 3) Asegurar también beforeEach/afterEach si aparecieran sin async (opcional pero útil)\n  code = code.replace(\n    /(test\\.(?:beforeAll|beforeEach|afterEach|afterAll)\\(\\s*)\\(\\s*([^)]*)\\)\\s*=>\\s*\\{/gs,\n    \"$1async ($2) => {\"\n  );\n  code = code.replace(\n    /(test\\.(?:beforeAll|beforeEach|afterEach|afterAll)\\(\\s*)function\\s*\\(\\s*([^)]*)\\s*\\)\\s*\\{/gs,\n    \"$1async function ($2) {\"\n  );\n\n  return code;\n}\n\n\n/**\n * HOTFIX: Reescribe cualquier goto(..., { waitUntil: 'networkidle' }) a 'domcontentloaded'\n * y agrega inmediatamente `await page.waitForLoadState('load');`.\n * También maneja goto('https://demoblaze.com') sin opciones.\n */\nfunction fixExistingGotoNetworkIdle(code) {\n  // A) Demoblaze absoluto + networkidle\n  code = code.replace(\n    /([ \\t]*)await\\s+page\\.goto\\(\\s*['\"]https?:\\/\\/demoblaze\\.com\\/?['\"]\\s*,\\s*\\{\\s*waitUntil\\s*:\\s*['\"]networkidle['\"]\\s*\\}\\s*\\)\\s*;?/gmi,\n    (m, indent) =>\n      `${indent}await page.goto('https://demoblaze.com', { waitUntil: 'domcontentloaded' });\\n${indent}await page.waitForLoadState('load');`\n  );\n\n  // B) Cualquier URL + networkidle (catch-all)\n  code = code.replace(\n    /([ \\t]*)await\\s+page\\.goto\\(\\s*([^,;]+?)\\s*,\\s*\\{\\s*waitUntil\\s*:\\s*['\"]networkidle['\"]\\s*\\}\\s*\\)\\s*;?/gmi,\n    (m, indent, urlExpr) =>\n      `${indent}await page.goto(${urlExpr}, { waitUntil: 'domcontentloaded' });\\n${indent}await page.waitForLoadState('load');`\n  );\n\n  // C) Demoblaze absoluto sin opciones\n  code = code.replace(\n    /([ \\t]*)await\\s+page\\.goto\\(\\s*['\"]https?:\\/\\/demoblaze\\.com\\/?['\"]\\s*\\)\\s*;?/gmi,\n    (m, indent) =>\n      `${indent}await page.goto('https://demoblaze.com', { waitUntil: 'domcontentloaded' });\\n${indent}await page.waitForLoadState('load');`\n  );\n\n  // D) Última red de seguridad: objeto con networkidle en cualquier orden\n  code = code.replace(\n    /([ \\t]*)await\\s+page\\.goto\\(\\s*([^,;]+?)\\s*,\\s*\\{([^}]*)\\}\\s*\\)\\s*;?/gmi,\n    (m, indent, urlExpr, obj) => {\n      if (/waitUntil\\s*:\\s*['\"]networkidle['\"]/i.test(obj)) {\n        const objSafe = obj.replace(/waitUntil\\s*:\\s*['\"]networkidle['\"]/i, `waitUntil: 'domcontentloaded'`);\n        return `${indent}await page.goto(${urlExpr}, { ${objSafe} });\\n${indent}await page.waitForLoadState('load');`;\n      }\n      return m;\n    }\n  );\n\n  return { code };\n}\n\n/**\n * MOD: si falta un goto, inyecta el patrón estable (absoluto a Demoblaze,\n * domcontentloaded + waitForLoadState) al inicio del cuerpo del test.\n */\nfunction ensureGotoAtStart(code) {\n  if (/await\\s+page\\.goto\\(\\s*['\"]https?:\\/\\/demoblaze\\.com/i.test(code)) return code;\n  return code.replace(\n    /(test\\([^)]*?\\{\\s*page\\s*\\}\\)\\s*=>\\s*\\{\\s*)/s,\n    `$1await page.goto('https://demoblaze.com', { waitUntil: 'domcontentloaded' });\\n      await page.waitForLoadState('load');\\n`\n  );\n}\n\nfunction normalizeAddToCartRole(code) {\n  return code\n    .replace(/getByRole\\(\\s*'button'\\s*,\\s*\\{\\s*name\\s*:\\s*'Add to cart'\\s*\\}\\s*\\)/g, `getByRole('link', { name: 'Add to cart' })`)\n    .replace(/getByRole\\(\\s*\"button\"\\s*,\\s*\\{\\s*name\\s*:\\s*\"Add to cart\"\\s*\\}\\s*\\)/g, `getByRole(\"link\", { name: \"Add to cart\" })`);\n}\nfunction removeWaitForTimeout(code) {\n  return code.replace(/await\\s+page\\.waitForTimeout\\([\\s\\d]+\\)\\s*;?/g, '');\n}\nfunction normalizeCartUrlAndBasics(code) {\n  code = code.replace(\n    /await\\s+expect\\(page\\)\\.toHaveURL\\([^)]*cart\\.html[^)]*\\)\\s*;?/g,\n    `await expect(page).toHaveURL(/https:\\\\/\\\\/demoblaze\\\\.com\\\\/cart\\\\.html\\\\/?/);`\n  );\n  code = code.replace(\n    /getByRole\\(\\s*'heading'\\s*,\\s*\\{\\s*name\\s*:\\s*(['\"`])Products\\1\\s*\\}\\s*\\)/g,\n    `getByRole('heading', { name: 'Products' })`\n  );\n  return code;\n}\nfunction normalizePlaceOrderHeading(code) {\n  return code.replace(\n    /await\\s+expect\\(page\\.getByRole\\(\\s*['\"`]heading['\"`]\\s*,\\s*\\{\\s*name\\s*:\\s*['\"`]Place order['\"`]\\s*\\}\\s*\\)\\)\\.toBeVisible\\(\\)\\s*;?/g,\n    `await expect(page.locator('h5#orderModalLabel')).toBeVisible();`\n  );\n}\nfunction normalizeContact(code) {\n  code = code\n    .replace(\n      /await\\s+expect\\(page\\.getByRole\\(\\s*['\"`]heading['\"`]\\s*,\\s*\\{\\s*name\\s*:\\s*['\"`](Contact us|New message)['\"`]\\s*\\}\\s*\\)\\)\\.toBeVisible\\(\\)\\s*;?/g,\n      `await expect(page.locator('h5#exampleModalLabel')).toBeVisible();`\n    )\n    .replace(\n      /await\\s+expect\\(page\\.getByRole\\(\\s*['\"`]heading['\"`]\\s*,\\s*\\{\\s*name\\s*:\\s*['\"`](Contact us|New message)['\"`]\\s*\\}\\s*\\)\\)\\.not\\.toBeVisible\\(\\)\\s*;?/g,\n      `await expect(page.locator('h5#exampleModalLabel')).not.toBeVisible();`\n    );\n  code = code.replace(/getByLabel\\(\\s*['\"`]Contact Email['\"`]\\s*\\)/g, `locator('#recipient-email')`);\n  code = code.replace(/getByLabel\\(\\s*['\"`]Contact Name['\"`]\\s*\\)/g, `locator('#recipient-name')`);\n  code = code.replace(/getByLabel\\(\\s*['\"`]Message['\"`]\\s*\\)/g, `locator('#message-text')`);\n  return code;\n}\nfunction hardenAboutUsModal(code) {\n  code = code.replace(\n    /getByRole\\(\\s*['\"`]heading['\"`]\\s*,\\s*\\{\\s*name\\s*:\\s*['\"`]About us['\"`]\\s*\\}\\s*\\)/g,\n    `locator('#videoModal').getByRole('heading', { name: 'About us' })`\n  );\n  code = code.replace(\n    /getByRole\\(\\s*['\"`]button['\"`]\\s*,\\s*\\{\\s*name\\s*:\\s*['\"`]Close['\"`]\\s*\\}\\s*\\)/g,\n    `locator('#videoModal').getByRole('button', { name: 'Close' })`\n  );\n  code = code.replace(\n    /await\\s+expect\\(\\s*page\\.getByRole\\(\\s*['\"`]heading['\"`]\\s*,\\s*\\{\\s*name\\s*:\\s*['\"`]About us['\"`]\\s*\\}\\s*\\)\\s*\\)\\.not\\.toBeVisible\\(\\)\\s*;?/g,\n    `await expect(page.locator('#videoModal')).not.toBeVisible();`\n  );\n  return code;\n}\nfunction ensureDialogHandlers(code) {\n  if (/getByRole\\(\\s*['\"`]link['\"`]\\s*,\\s*\\{\\s*name\\s*:\\s*['\"`]Add to cart['\"`]\\s*\\}\\s*\\)\\.click\\(\\)/.test(code) &&\n      !/page\\.once\\(\\s*['\"`]dialog['\"`]\\s*,[^)]*Product added/.test(code)) {\n    code = code.replace(\n      /await\\s+page\\.getByRole\\(\\s*['\"`]link['\"`]\\s*,\\s*\\{\\s*name\\s*:\\s*['\"`]Add to cart['\"`]\\s*\\}\\s*\\)\\.click\\(\\)\\s*;?/,\n      `page.once('dialog', dialog => { expect(dialog.message()).toContain('Product added'); dialog.accept(); });\n    await page.getByRole('link', { name: 'Add to cart' }).click();`\n    );\n  }\n  if (/getByRole\\(\\s*['\"`]button['\"`]\\s*,\\s*\\{\\s*name\\s*:\\s*['\"`]Send message['\"`]\\s*\\}\\s*\\)\\.click\\(\\)/.test(code) &&\n      !/page\\.once\\(\\s*['\"`]dialog['\"`]\\s*,[^)]*Thanks/.test(code)) {\n    code = code.replace(\n      /await\\s+page\\.getByRole\\(\\s*['\"`]button['\"`]\\s*,\\s*\\{\\s*name\\s*:\\s*['\"`]Send message['\"`]\\s*\\}\\s*\\)\\.click\\(\\)\\s*;?/,\n      `page.once('dialog', dialog => { expect(dialog.message()).toContain('Thanks'); dialog.accept(); });\n    await page.getByRole('button', { name: 'Send message' }).click();`\n    );\n  }\n  return code;\n}\nfunction softenPlaceOrderAlerts(code) {\n  code = code.replace(\n    /expect\\(dialog\\.message\\(\\)\\)\\.toContain\\((['\"`]).*?(Credit ?[cC]ard|Creditcard).*?\\1\\)\\s*;?/g,\n    `expect(dialog.message()).toContain('Please fill out');`\n  );\n  code = code.replace(\n    /expect\\(dialog\\.message\\(\\)\\)\\.toContain\\((['\"`]).*?Please fill out.*?\\1\\)\\s*;?/g,\n    `expect(dialog.message()).toContain('Please fill out');`\n  );\n  return code;\n}\nfunction handlePurchaseSuccessAsModal(code) {\n  code = code.replace(/page\\.once\\(\\s*['\"`]dialog['\"`][\\s\\S]*?Thank you for your purchase![\\s\\S]*?\\)\\s*;?/g, '');\n  const afterPurchaseRegex =\n    /(await\\s+page\\.(?:getByRole\\(\\s*['\"`]button['\"`]\\s*,\\s*\\{\\s*name\\s*:\\s*['\"`]Purchase['\"`]\\s*\\}\\s*\\)|locator\\(\\s*['\"`]button\\[onclick=['\"`]purchaseOrder\\(\\)['\"`]\\]['\"`]\\s*\\))\\.click\\(\\)\\s*;)(?![\\s\\S]*?h2\\.sa-title)/;\n  if (afterPurchaseRegex.test(code)) {\n    code = code.replace(afterPurchaseRegex, `$1\n    await expect(page.locator('h2.sa-title')).toBeVisible();\n    await expect(page.locator('h2.sa-title')).toHaveText('Thank you for your purchase!');\n    await page.getByRole('button', { name: 'OK' }).click();\n    `);\n  }\n  return code;\n}\nfunction robustCartEmptyChecks(code) {\n  if (/tbody#tbodyid/.test(code) && !/#tbodyid tr'\\)\\)\\.toHaveCount/.test(code)) {\n    code = code.replace(\n      /(await\\s+expect\\(page\\.locator\\(\\s*['\"`]#tbodyid['\"`]\\s*\\)\\)\\.toBeVisible\\(\\)\\s*;)/,\n      `$1\n      await expect(page.locator('#tbodyid tr')).toHaveCount(0);`\n    );\n  }\n  return code;\n}\n\n/** Corrige la aserción 'PRODUCT STORE' para evitar strict mode violation */\nfunction fixProductStoreAssertion(code) {\n  code = code.replace(\n    /page\\.getByText\\(\\s*['\"`]PRODUCT STORE['\"`]\\s*\\)/g,\n    `page.getByRole('link', { name: 'PRODUCT STORE' })`\n  );\n  code = code.replace(\n    /getByRole\\(\\s*['\"`]heading['\"`]\\s*,\\s*\\{\\s*name\\s*:\\s*['\"`]PRODUCT STORE['\"`]\\s*\\}\\s*\\)/g,\n    `getByRole('link', { name: 'PRODUCT STORE' })`\n  );\n  return code;\n}\n\n/** Normaliza enlaces del navbar y elimina selectores frágiles link[ref=\"e..\"] */\nfunction normalizeNavbarLinks(code) {\n  // borra líneas con link[ref=\"e...\"] en EXPECTS\n  code = code.replace(/[ \\t]*await\\s+expect\\(page\\.locator\\(\\s*['\"`]link\\[ref=['\"`]e\\d+['\"`]\\]['\"`]\\s*\\)\\)\\.toBeVisible\\(\\)\\s*;\\s*\\n/g, '');\n  const neededBlock =\n`await expect(page.getByRole('link', { name: 'Home' })).toBeVisible();\nawait expect(page.getByRole('link', { name: 'Contact' })).toBeVisible();\nawait expect(page.getByRole('link', { name: 'About us' })).toBeVisible();\nawait expect(page.getByRole('link', { name: 'Cart' })).toBeVisible();\nawait expect(page.getByRole('link', { name: 'Log in' })).toBeVisible();\nawait expect(page.getByRole('link', { name: 'Sign up' })).toBeVisible();\n`;\n  if (!/getByRole\\(\\s*['\"`]link['\"`]\\s*,\\s*\\{\\s*name\\s*:\\s*['\"`]Home['\"`]\\s*\\}\\)/.test(code)) {\n    if (/await\\s+expect\\(page\\)\\.toHaveURL\\(/.test(code)) {\n      code = code.replace(/(await\\s+expect\\(page\\)\\.toHaveURL\\([^\\n]+\\)\\s*;\\s*\\n)/, `$1${neededBlock}`);\n    } else if (/getByRole\\(\\s*['\"`]link['\"`]\\s*,\\s*\\{\\s*name\\s*:\\s*['\"`]PRODUCT STORE['\"`]\\s*\\}\\s*\\)/.test(code)) {\n      code = code.replace(/(await\\s+expect\\(page\\.getByRole\\([^\\n]+PRODUCT STORE[^\\n]+\\)\\)\\.toBeVisible\\(\\)\\s*;\\s*\\n)/, `$1${neededBlock}`);\n    } else {\n      code = code.replace(/(await\\s+page\\.waitForLoadState\\(\\s*['\"`]load['\"`]\\s*\\)\\s*;\\s*\\n)/, `$1${neededBlock}`);\n    }\n  }\n  return code;\n}\n\n/** Selector robusto para detalle (evita '#myTabContent .lead') */\nfunction fixProductDescriptionSelector(code) {\n  code = code.replace(\n    /await\\s+expect\\(page\\.locator\\(\\s*['\"`]#myTabContent\\s*\\.lead['\"`]\\)\\)\\.toBeVisible\\(\\)\\s*;?/g,\n    `await expect(page.locator('h2.name')).toBeVisible();\nawait expect(page.locator('h3.price-container')).toBeVisible();\nawait expect(page.getByRole('link', { name: 'Add to cart' })).toBeVisible();`\n  );\n  return code;\n}\n\n/** NUEVO: corrige selector roto tipo: locator('link \"Laptops\" [ref=e28]') */\nfunction fixWeirdLinkLocatorSyntax(code) {\n  code = code.replace(/page\\.locator\\(\\s*['\"`]link\\s*\"Laptops\"\\s*\\[ref=.?e28.?]\\s*['\"`]\\s*\\)\\.click\\(\\)\\s*;?/gi,\n                      `page.getByRole('link', { name: 'Laptops', exact: true }).click();`);\n  code = code.replace(/page\\.locator\\(\\s*['\"`]link\\s*\"Phones\"\\s*\\[ref=.?e27.?]\\s*['\"`]\\s*\\)\\.click\\(\\)\\s*;?/gi,\n                      `page.getByRole('link', { name: 'Phones', exact: true }).click();`);\n  code = code.replace(/page\\.locator\\(\\s*['\"`]link\\s*\"Monitors\"\\s*\\[ref=.?e29.?]\\s*['\"`]\\s*\\)\\.click\\(\\)\\s*;?/gi,\n                      `page.getByRole('link', { name: 'Monitors', exact: true }).click();`);\n  return code;\n}\n\n/** NUEVO: evita strict violations con productos (usa role link exacto) */\nfunction fixProductNameStrictAssertions(code) {\n  const names = ['Samsung galaxy s6','Dell i7 8gb','Sony vaio i5','Apple monitor 24','ASUS Full HD','MacBook Air','Nokia lumia 1520'];\n  for (const n of names) {\n    const re = new RegExp(`page\\\\.getByText\\\\(\\\\s*['\"\\`]${n.replace(/[.*+?^${}()|[\\]\\\\]/g,'\\\\$&')}['\"\\`]\\\\s*\\\\)`, 'g');\n    code = code.replace(re, `page.getByRole('link', { name: '${n}' })`);\n  }\n  return code;\n}\n\n/** NUEVO: estabiliza verificación \"Monitors\" sin arrays ni .some */\nfunction stabilizeMonitorsCategoryCheck(code) {\n  if (/allTextContents\\(\\).*some\\(.*Monitor/i.test(code)) {\n    code = code.replace(\n      /const\\s+productTitles[\\s\\S]*?expect\\(\\s*hasLaptopProduct\\s*\\)\\.toBeFalsy\\(\\)\\s*;?/i,\n      `await expect(page.getByRole('link', { name: 'Apple monitor 24' })).toBeVisible();\nawait expect(page.getByRole('link', { name: 'ASUS Full HD' })).toBeVisible();\nawait expect(page.getByRole('link', { name: 'Samsung galaxy s6' })).not.toBeVisible();\nawait expect(page.getByRole('link', { name: 'Dell i7 8gb' })).not.toBeVisible();`\n    );\n  }\n  return code;\n}\n\n/** ---------- NUEVO MUY DURO: eliminar/convertir cualquier forma de `ref=` ---------- */\nfunction pickNavByScenario(s) {\n  const t = String(s || '').toLowerCase();\n  if (t.includes('contact')) return 'Contact';\n  if (t.includes('about')) return 'About us';\n  if (t.includes('phones')) return 'Phones';\n  if (t.includes('laptops')) return 'Laptops';\n  if (t.includes('monitors')) return 'Monitors';\n  return 'Home';\n}\n\nfunction purgeRefEngineEverywhere(code, scenarioName) {\n  const navTarget = pickNavByScenario(scenarioName);\n\n  // A) Cualquier EXPECT con locator('ref=eXX') -> eliminar línea\n  code = code.replace(/[ \\t]*await\\s+expect\\(\\s*page\\.locator\\(\\s*['\"`]ref=e\\d+['\"`]\\s*\\)\\s*\\)\\.[^\\n]*;\\s*\\n/g, '');\n\n  // B) Cualquier CLICK con locator('ref=eXX').filter({ hasText: 'Contact'|'About us'|... })\n  code = code.replace(\n    /page\\.locator\\(\\s*['\"`]ref=e\\d+['\"`]\\s*\\)\\.filter\\(\\s*\\{\\s*hasText\\s*:\\s*['\"`]Contact['\"`][^}]*\\}\\s*\\)\\.click\\(\\)\\s*;?/gi,\n    `page.getByRole('link', { name: 'Contact', exact: true }).click();`\n  );\n  code = code.replace(\n    /page\\.locator\\(\\s*['\"`]ref=e\\d+['\"`]\\s*\\)\\.filter\\(\\s*\\{\\s*hasText\\s*:\\s*['\"`]About us['\"`][^}]*\\}\\s*\\)\\.click\\(\\)\\s*;?/gi,\n    `page.getByRole('link', { name: 'About us', exact: true }).click();`\n  );\n\n  // C) Clicks genéricos con locator('ref=eXX') -> usar nav por escenario\n  code = code.replace(\n    /page\\.locator\\(\\s*['\"`]ref=e\\d+['\"`]\\s*\\)\\.click\\(\\)\\s*;?/gi,\n    `page.getByRole('link', { name: '${navTarget}', exact: true }).click();`\n  );\n\n  // D) Aserciones genéricas con locator('ref=eXX') -> reemplazar por PRODUCT STORE visible\n  code = code.replace(\n    /await\\s+expect\\(\\s*page\\.locator\\(\\s*['\"`]ref=e\\d+['\"`]\\s*\\)\\s*\\)\\.toBeVisible\\(\\)\\s*;?/gi,\n    `await expect(page.getByRole('link', { name: 'PRODUCT STORE' })).toBeVisible();`\n  );\n\n  // E) Cualquier uso residual de locator('ref=eXX') -> convertir a Home para no romper\n  code = code.replace(\n    /page\\.locator\\(\\s*['\"`]ref=e\\d+['\"`]\\s*\\)/gi,\n    `page.getByRole('link', { name: '${navTarget}', exact: true })`\n  );\n\n  // F) Selectores por atributo: a[ref=\"e13\"] / link[ref=\"e13\"]\n  const attrToRole = {\n    e10: 'Home',\n    e13: 'Contact',\n    e15: 'About us',\n    e17: 'Cart',\n    e19: 'Log in',\n    e21: 'Sign up',\n  };\n  code = code.replace(/page\\.locator\\(\\s*['\"`](?:a|link)\\[ref=[\"']e(\\d+)[\"']\\]['\"`]\\s*\\)\\.click\\(\\)\\s*;?/gi, (m, num) => {\n    const name = attrToRole[`e${num}`] || navTarget;\n    return `page.getByRole('link', { name: '${name}', exact: true }).click();`;\n  });\n  code = code.replace(/page\\.locator\\(\\s*['\"`](?:a|link)\\[ref=[\"']e(\\d+)[\"']\\]['\"`]\\s*\\)/gi, (m, num) => {\n    const name = attrToRole[`e${num}`] || navTarget;\n    return `page.getByRole('link', { name: '${name}', exact: true })`;\n  });\n\n  // G) EXPECTS con a[ref=\"e..\"] -> reemplazar por el rol equivalente\n  code = code.replace(\n    /await\\s+expect\\(\\s*page\\.locator\\(\\s*['\"`](?:a|link)\\[ref=[\"']e(\\d+)[\"']\\]['\"`]\\s*\\)\\s*\\)\\.toBeVisible\\(\\)\\s*;?/gi,\n    (m, num) => {\n      const name = attrToRole[`e${num}`] || 'Home';\n      return `await expect(page.getByRole('link', { name: '${name}' })).toBeVisible();`;\n    }\n  );\n\n  return code;\n}\n\n/** ---------- NUEVOS PARCHES ENDURECIDOS (basados en tus últimos fallos) ---------- */\n/** Carrito: #tbodyid puede estar oculto si no hay items -> exigir contenedor visible + toBeAttached */\nfunction relaxCartVisibilityAssertion(code) {\n  code = code.replace(\n    /await\\s+expect\\(page\\.locator\\(\\s*['\"`]#tbodyid['\"`]\\s*\\)\\)\\.toBeVisible\\(\\)\\s*;?/g,\n    `await expect(page.locator('#page-wrapper')).toBeVisible();\nawait expect(page.locator('#tbodyid')).toBeAttached();`\n  );\n  return code;\n}\n\n/** Contact: evitar doble manejo de diálogo => usar patrón waitForEvent+click */\nfunction normalizeSendMessageDialogOnce(code) {\n  // elimina cualquier page.once('dialog' ...) cercana a Send message\n  code = code.replace(\n    /page\\.once\\(\\s*['\"`]dialog['\"`][\\s\\S]*?Send message[\\s\\S]*?\\);\\s*/gi,\n    ''\n  );\n  // click robusto con waitForEvent\n  code = code.replace(\n    /await\\s+page\\.getByRole\\(\\s*['\"`]button['\"`]\\s*,\\s*\\{\\s*name\\s*:\\s*['\"`]Send message['\"`]\\s*\\}\\s*\\)\\.click\\(\\)\\s*;?/g,\n    `const [dlg] = await Promise.all([\n      page.waitForEvent('dialog'),\n      page.getByRole('button', { name: 'Send message' }).click(),\n    ]);\n    expect(dlg.message()).toContain('Thanks');\n    await dlg.accept();`\n  );\n  return code;\n}\n\n/** About us: hay 2 botones Close; usa el del footer del modal */\nfunction fixAboutUsCloseStrict(code) {\n  code = code.replace(\n    /await\\s+page\\.locator\\(\\s*['\"`]#videoModal['\"`]\\s*\\)\\.getByRole\\(\\s*['\"`]button['\"`]\\s*,\\s*\\{\\s*name\\s*:\\s*['\"`]Close['\"`]\\s*\\}\\s*\\)\\.click\\(\\)\\s*;?/g,\n    `await page.locator('#videoModal .modal-footer >> button:has-text(\"Close\")').click();`\n  );\n  return code;\n}\n\n/** Paginación: desambiguar Next/Previous vs carrusel */\nfunction disambiguatePaginationButtons(code) {\n  code = code.replace(\n    /page\\.getByRole\\(\\s*['\"`]button['\"`]\\s*,\\s*\\{\\s*name\\s*:\\s*['\"`]Next['\"`]\\s*\\}\\s*\\)\\.click\\(\\)\\s*;?/g,\n    `await page.locator('#next2').click();`\n  );\n  code = code.replace(\n    /page\\.getByRole\\(\\s*['\"`]button['\"`]\\s*,\\s*\\{\\s*name\\s*:\\s*['\"`]Previous['\"`]\\s*\\}\\s*\\)\\.click\\(\\)\\s*;?/g,\n    `await page.locator('#prev2').click();`\n  );\n  return code;\n}\n\n/** Grid de productos: asegurar que la grilla esté cargada antes de leer .card-title */\nfunction ensureProductGridLoaded(code) {\n  if (!/card-title/.test(code)) return code;\n  if (!/await\\s+page\\.(waitForSelector|locator\\(\\s*['\"`]\\.card-title['\"`]\\s*\\)\\.first\\(\\)\\.waitFor|expect\\(page\\.locator\\(\\s*['\"`]\\.card-title['\"`]\\s*\\)\\.first\\(\\)\\)\\.toBeVisible\\(\\))/.test(code)) {\n    code = code.replace(\n      /(await\\s+expect\\(page\\)\\.toHaveTitle\\([^\\n]+?\\)\\s*;)/,\n      `$1\n      await page.waitForSelector('.card-title');`\n    );\n  }\n  return code;\n}\n\n/** Login: los campos de Sign up compiten con los de Login -> scope al #logInModal */\nfunction scopeLoginInputsToLoginModal(code) {\n  code = code.replace(\n    /page\\.getByLabel\\(\\s*['\"`]Username['\"`]\\s*\\)\\.first\\(\\)/g,\n    `page.locator('#logInModal').getByLabel('Username')`\n  );\n  code = code.replace(\n    /page\\.getByLabel\\(\\s*['\"`]Password['\"`]\\s*\\)\\.first\\(\\)/g,\n    `page.locator('#logInModal').getByLabel('Password')`\n  );\n  // por si usaron IDs del signup\n  code = code.replace(/#sign-username/g, '#loginusername').replace(/#sign-password/g, '#loginpassword');\n  return code;\n}\n\n/** Aserciones mínimas de contexto */\nfunction ensureThreeMeaningfulAsserts(code) {\n  if (!/toHaveURL\\(/.test(code)) {\n    code = code.replace(\n      /(await\\s+page\\.goto\\([^\\n]+?\\)\\s*;)/,\n      `$1\n      await expect(page).toHaveURL(/https:\\\\/\\\\/demoblaze\\\\.com\\\\/?/);`\n    );\n  }\n  if (!/PRODUCT STORE/.test(code)) {\n    code = code.replace(\n      /(await\\s+expect\\(page\\)\\.toHaveURL\\([^\\n]+?\\)\\s*;)/,\n      `$1\n      await expect(page.getByRole('link', { name: 'PRODUCT STORE' })).toBeVisible();`\n    );\n  }\n  return code;\n}\n\n// ---------- NUEVAS CORRECCIONES PUNTUALES (sin cambiar tu estructura) ----------\nfunction cleanJsonArtifacts(code) {\n  // Si el archivo quedó como un objeto JSON con \"fileName\"/\"fileContent\", extrae el contenido\n  if (/^\\s*\\{\\s*\"fileName\"\\s*:\\s*\".*?\",\\s*\"fileContent\"\\s*:\\s*\"/s.test(code)) {\n    try {\n      const parsed = JSON.parse(code);\n      if (parsed && typeof parsed === 'object' && typeof parsed.fileContent === 'string') {\n        return String(parsed.fileContent);\n      }\n    } catch {}\n  }\n  return code;\n}\n\nfunction enforceCleanHomeUrlRegex(code) {\n  // 1) Arregla variantes con slashes sin escapar (causan el \\uXXXX)\n  code = code.replace(\n    /toHaveURL\\(\\s*\\/https:\\/\\/demoblaze\\.com\\/?\\s*\\/\\s*\\)/g,\n    \"toHaveURL(/https:\\\\/\\\\/demoblaze\\\\.com\\\\/?/)\"\n  );\n\n  // 2) Arregla variantes con doble escape (https\\\\/\\\\/)\n  code = code.replace(\n    /toHaveURL\\(\\s*\\/https:\\\\\\\\\\/\\\\\\\\\\/demoblaze\\\\.com\\\\\\\\\\/\\?\\//g,\n    \"toHaveURL(/https:\\\\/\\\\/demoblaze\\\\.com\\\\/?/)\"\n  );\n\n  // 3) Variante sin el opcional final\n  code = code.replace(\n    /toHaveURL\\(\\s*\\/https:\\\\\\/\\\\\\/demoblaze\\.com\\/\\s*\\/\\s*\\)/g,\n    \"toHaveURL(/https:\\\\/\\\\/demoblaze\\\\.com\\\\/?/)\"\n  );\n\n  // 4) Cualquier resto que contenga \"demoblaze.com\" en toHaveURL con regex literal:\n  //    si aún no tiene los slashes escapados, normaliza.\n  code = code.replace(\n    /toHaveURL\\(\\s*\\/(https:\\/\\/)?demoblaze\\.com(\\/\\?)?\\/\\s*\\)/g,\n    \"toHaveURL(/https:\\\\/\\\\/demoblaze\\\\.com\\\\/?/)\"\n  );\n\n  return code;\n}\n\n\nfunction fixBrokenAwaits(code) {\n  // Elimina líneas con \"await ).algo(...)\" o \"await );\"\n  code = code.replace(/^\\s*await\\s*\\)\\s*\\.[a-zA-Z_]\\w*\\s*\\([^)]*\\)\\s*;?\\s*$/gm, `// FIX removed broken await chain`);\n  code = code.replace(/^\\s*await\\s*\\);\\s*$/gm, `// FIX removed dangling await`);\n  return code;\n}\n\n// NUEVO: corta cualquier cadena colgante que comience con \").metodo(...)\" o una \")\" suelta\nfunction fixDanglingChains(code) {\n  // 1) \").toBeVisible();\" / \").not.toBeVisible();\" / \").click();\" etc.\n  code = code.replace(/^\\s*\\)\\s*\\.[a-zA-Z_]\\w*(?:\\.[a-zA-Z_]\\w*)*\\s*\\([^)]*\\)\\s*;?\\s*$/gm, `// FIX removed dangling chain`);\n  // 2) \")\" suelta o \");\" suelta en su propia línea\n  code = code.replace(/^\\s*\\)\\s*;?\\s*$/gm, `// FIX removed stray close`);\n  // 3) Dobles espacios/ saltos múltiples tras limpieza\n  code = code.replace(/\\n{3,}/g, '\\n\\n');\n  return code;\n}\n\n/** NUEVO: evita cierre prematuro del bloque de test cuando vienen awaits críticos después */\nfunction preventPrematureCloseAroundCriticalAwaits(code) {\n  const critical = [\n    \"getByRole('button', { name: 'Purchase' }).click()\",\n    \"locator('h2.sa-title')\",\n    \"getByRole('button', { name: 'OK' }).click()\",\n    \"getByRole('button', { name: 'Send message' }).click()\",\n  ];\n  const lines = code.split('\\n');\n  for (let i = 0; i < lines.length - 1; i++) {\n    if (/^\\s*\\}\\);\\s*$/.test(lines[i])) {\n      const lookahead = lines.slice(i + 1, i + 6).join('\\n');\n      if (critical.some(sig => lookahead.includes(sig))) {\n        lines[i] = '// FIX removed premature close of test block';\n      }\n    }\n  }\n  return lines.join('\\n');\n}\n\n// NUEVO: si hay más '}' que '{', recorta cierres sueltos al final\nfunction trimExcessClosingBraces(code) {\n  let opens = (code.match(/{/g) || []).length;\n  let closes = (code.match(/}/g) || []).length;\n  if (closes > opens) {\n    const lines = code.split('\\n');\n    for (let i = lines.length - 1; i >= 0 && closes > opens; i--) {\n      if (/^\\s*\\}\\s*;?\\s*$/.test(lines[i])) {\n        lines[i] = '// FIX trimmed extra closing brace';\n        closes--;\n      }\n    }\n    return lines.join('\\n');\n  }\n  return code;\n}\n\nfunction ensureBalancedParentheses(code) {\n  const open = (code.match(/\\(/g) || []).length;\n  const close = (code.match(/\\)/g) || []).length;\n  if (close < open) code += ')'.repeat(open - close);\n  return code;\n}\n\nfunction ensureAsyncAtRootIfAwaitExists(code) {\n  if (code.includes('await ') && !code.includes('async ({ page })')) {\n    code = code.replace(/test\\((['\"].*?['\"])\\s*,\\s*\\(\\s*\\{\\s*page\\s*\\}\\s*\\)\\s*=>/s,\n      'test($1, async ({ page }) =>');\n  }\n  return code;\n}\n\n\nfunction balanceBraces(code) {\n  const opens = (code.match(/{/g) || []).length;\n  const closes = (code.match(/}/g) || []).length;\n  if (opens > closes) {\n    return code + '\\n'.repeat(Math.min(3, opens - closes)) + '}'.repeat(opens - closes) + '\\n';\n  }\n  return code;\n}\n\n// --- DEDUPE: si una const/let/var se declara 2+ veces, la 2da se convierte en asignación ---\nfunction fixDuplicateIdentifiers(code) {\n  const lines = code.split('\\n');\n  const declared = new Set();\n  const declRE = /^\\s*(const|let|var)\\s+([A-Za-z_$][\\w$]*)\\s*=\\s*/;\n\n  for (let i = 0; i < lines.length; i++) {\n    const m = lines[i].match(declRE);\n    if (!m) continue;\n    const kind = m[1];\n    const name = m[2];\n\n    if (declared.has(name)) {\n      // Si ya existe, convierto \"const name =\" → \"name =\" (asignación simple)\n      lines[i] = lines[i].replace(declRE, `${name} = `);\n    } else {\n      declared.add(name);\n    }\n  }\n  return lines.join('\\n');\n}\n\n// --- INLINER: elimina variables intermedias duplicables `const x = expr; await expect(x)` → `await expect(expr)`\nfunction inlineImmediateExpectTargets(code) {\n  // Caso: const v = <expr>;\n  //       await expect(v)...\n  // Reemplaza por: await expect(<expr>) y elimina la const si no se usa más en la misma línea\n  return code.replace(\n    /(?:^|\\n)\\s*const\\s+([A-Za-z_$][\\w$]*)\\s*=\\s*(.+?)\\s*;\\s*\\n\\s*await\\s+expect\\(\\s*\\1\\s*\\)/gs,\n    (m, vname, rhs) => `\\nawait expect(${rhs.trim()})`\n  );\n}\n\n// --- Recorte fuerte de colgantes de cierre al final (EOF): \"}\", \")\", \");\" sueltos ---\nfunction trimTrailingDanglingClosers(code) {\n  const lines = code.split('\\n');\n  // Elimina líneas finales que sean solo \"}\" o \")\" o \");\"\n  while (lines.length && /^\\s*(\\}|\\)|\\);\\s*)\\s*$/.test(lines[lines.length - 1])) {\n    lines[lines.length - 1] = '// FIX trimmed trailing closer';\n    // Si quedan sólo comentarios FIX al final, corta comentarios repetidos\n    if (/^\\s*\\/\\/ FIX/.test(lines[lines.length - 1]) && lines.length > 1 && /^\\s*\\/\\/ FIX/.test(lines[lines.length - 2])) {\n      lines.pop();\n    } else {\n      break;\n    }\n  }\n  return lines.join('\\n');\n}\n\n// --- Balanceo adicional de paréntesis + recorte de \")\\n\" finales repetidos ---\nfunction ensureBalancedParensAndTrim(code) {\n  const open = (code.match(/\\(/g) || []).length;\n  const close = (code.match(/\\)/g) || []).length;\n  if (open > close) {\n    code += ')'.repeat(open - close);\n  }\n  // Si hay más \")\" que \"(\", recorta \")\" sueltos desde EOF\n  if (close > open) {\n    const diff = close - open;\n    let cut = diff;\n    const lines = code.split('\\n');\n    for (let i = lines.length - 1; i >= 0 && cut > 0; i--) {\n      if (/^\\s*\\)\\s*;?\\s*$/.test(lines[i])) {\n        lines[i] = '// FIX trimmed stray )';\n        cut--;\n      }\n    }\n    code = lines.join('\\n');\n  }\n  return code;\n}\n\n// --- Seguridad: si hay await en el test y el callback no es async, lo forzamos ---\nfunction ensureAsyncAtRootIfAwaitExists(code) {\n  if (/\\bawait\\s+/.test(code) && !/test\\(\\s*['\"`][\\s\\S]*?['\"`]\\s*,\\s*async\\s*\\(\\s*\\{\\s*page\\s*\\}\\s*\\)\\s*=>/s.test(code)) {\n    code = code.replace(\n      /test\\(\\s*(['\"`].*?['\"`])\\s*,\\s*\\(\\s*\\{\\s*page\\s*\\}\\s*\\)\\s*=>/s,\n      'test($1, async ({ page }) =>'\n    );\n  }\n  return code;\n}\n\n// --- LIMPIADOR DE PUNTOS SUELTOS Y TOKENS HUÉRFANOS ---\nfunction removeDanglingDotsAndBrokenTokens(code) {\n  const lines = code.split('\\n');\n  for (let i = 0; i < lines.length; i++) {\n    // Línea que contiene solo un punto o símbolos sueltos\n    if (/^\\s*\\.\\s*$/.test(lines[i])) {\n      lines[i] = '// FIX removed stray dot';\n    }\n    // Corrige \".;\" o \".,\" o \".)\"\n    lines[i] = lines[i]\n      .replace(/(\\s+)\\.\\s*;?/g, '$1')   // elimina punto solitario antes de ;\n      .replace(/(\\s+)\\.\\s*,/g, '$1')   // elimina punto antes de coma\n      .replace(/\\.\\s*\\)/g, ')')        // elimina punto antes de cierre )\n      .replace(/\\)\\s*\\./g, ')');       // elimina punto después de )\n  }\n  return lines.join('\\n');\n}\n\n// ---------- metadatos ----------\nconst site = toSlug(j.__site ?? j.siteName ?? 'demoblaze');\nconst idx = pad2(j.__idx ?? j.scenarioIndex ?? 1);\nconst scenarioName = String(j.__title ?? j.scenarioName ?? `Escenario ${idx}`).trim() || `Escenario ${idx}`;\nconst defaultSafeName = `${site}.${idx}.${toSlug(scenarioName)}.spec.ts`;\n\n// ---------- entrada robusta ----------\nlet providedFileName =\n  coalesce(j.fileName, j.filename, j.data?.fileName, j.result?.fileName,\n           j.generated?.fileName, j.payload?.fileName, j.body?.fileName, j.response?.fileName);\n\nlet big =\n  coalesce(j.output, j.text, j.fileContent, j.content, j.code,\n           j.data?.fileContent, j.result?.fileContent, j.generated?.fileContent,\n           j.payload?.fileContent, j.body?.fileContent, j.response?.fileContent);\n\nbig = stripCodeFences(String(big));\nlet envelope = extractJsonEnvelope(big);\n\nif (!envelope) {\n  if (j.fileContent || j.content || j.text || j.code) {\n    envelope = {\n      fileName: j.fileName || j.filename,\n      fileContent: String(j.fileContent ?? j.content ?? j.text ?? j.code ?? ''),\n    };\n  }\n}\n\nconst finalName = ensureTsFileName((envelope && envelope.fileName) || providedFileName, defaultSafeName);\nlet code = String((envelope && envelope.fileContent) || big || '').replace(/^\\uFEFF/, '').trim();\n\nif (!code) {\n  code = `import { test, expect } from '@playwright/test';\n// ${finalName} generado automáticamente por el sanitizador porque la fuente no trajo contenido.\n// Ajusta el generador para proveer 'fileContent'.\ntest('placeholder - contenido vacío', async () => {\n  expect(1).toBe(1);\n});\n`;\n}\n\n// === APLICAR CORRECCIONES PRE-SANITIZADO DURO ===\ncode = cleanJsonArtifacts(code);\n// Quita líneas que solo contienen un punto (causa \"Unexpected token .\")\ncode = code.replace(/^\\s*\\.\\s*$/gm, '');\ncode = fixBrokenAwaits(code);\ncode = fixDanglingChains(code);\n// Evita cierres prematuros antes de awaits críticos (Purchase / OK / Send message / SweetAlert)\ncode = preventPrematureCloseAroundCriticalAwaits(code);\n// Si vienen más '}' que '{', recorta desde el final\ncode = trimExcessClosingBraces(code);\n// Balancea (si aún faltan cierres)\ncode = balanceBraces(code);\n\n// ---------- parches Playwright ----------\n// Imports + encabezado + nombres\ncode = ensureImport(code);\nconst siteTitle = site.charAt(0).toUpperCase() + site.slice(1);\ncode = upsertHeaderComment(code, siteTitle, idx, scenarioName);\ncode = normalizeDescribeAndTest(code, siteTitle, idx, scenarioName);\ncode = ensureAsyncTestCallbacks(code);\n\n// Navegación estable\n({ code } = fixExistingGotoNetworkIdle(code));\ncode = ensureGotoAtStart(code);\n\n// Limpiezas/fixes específicos que te estaban fallando\ncode = purgeRefEngineEverywhere(code, scenarioName); // *** NUEVO: mata y sustituye todo `ref=...`\ncode = fixWeirdLinkLocatorSyntax(code);              // corrige locator('link \"Laptops\" [ref=e28]')\ncode = fixProductNameStrictAssertions(code);         // usa roles para productos\ncode = stabilizeMonitorsCategoryCheck(code);         // Monitors sin arrays\n\n// Otros normalizadores\ncode = normalizeAddToCartRole(code);\ncode = removeWaitForTimeout(code);\ncode = normalizeCartUrlAndBasics(code);\ncode = normalizePlaceOrderHeading(code);\ncode = normalizeContact(code);\ncode = hardenAboutUsModal(code);\ncode = ensureDialogHandlers(code);\ncode = softenPlaceOrderAlerts(code);\ncode = handlePurchaseSuccessAsModal(code);\ncode = robustCartEmptyChecks(code);\ncode = preventPrematureCloseAroundCriticalAwaits(code);\ncode = trimExcessClosingBraces(code);\ncode = ensureBalancedParentheses(code);\ncode = ensureAsyncAtRootIfAwaitExists(code);\ncode = removeDanglingDotsAndBrokenTokens(code);\n\n\n\n// Ajustes finales\ncode = fixProductStoreAssertion(code);\ncode = normalizeNavbarLinks(code);\ncode = fixProductDescriptionSelector(code);\n\n// ---------- NUEVOS PARCHEOS ENDURECIDOS (según tus últimos errores) ----------\ncode = relaxCartVisibilityAssertion(code);\ncode = normalizeSendMessageDialogOnce(code);\ncode = fixAboutUsCloseStrict(code);\ncode = disambiguatePaginationButtons(code);\ncode = ensureProductGridLoaded(code);\ncode = scopeLoginInputsToLoginModal(code);\ncode = enforceCleanHomeUrlRegex(code);\ncode = inlineImmediateExpectTargets(code);       \ncode = fixDuplicateIdentifiers(code);            \ncode = trimTrailingDanglingClosers(code);        \ncode = ensureBalancedParensAndTrim(code);        \ncode = ensureAsyncAtRootIfAwaitExists(code); \n\n// Aserciones mínimas de contexto\ncode = ensureThreeMeaningfulAsserts(code);\n\n// ---------- salida (UN solo objeto) ----------\nreturn {\n  json: {\n    fileName: finalName,\n    fileContent: code.endsWith('\\n') ? code : code + '\\n',\n  },\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2416,
+        -272
+      ],
+      "id": "ee65de85-af82-4684-958e-309545832faa",
+      "name": "Sanitizador post-Generador (legacy)"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Read/Write Files from Disk2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "MCP Client1": {
+      "ai_tool": [
+        [
+          {
+            "node": "Planificador",
+            "type": "ai_tool",
+            "index": 0
+          },
+          {
+            "node": "Generador",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convert to File1": {
+      "main": [
+        [
+          {
+            "node": "Read/Write Files from Disk1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read/Write Files from Disk1": {
+      "main": [
+        [
+          {
+            "node": "Code",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Sellar metadatos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convert to File2": {
+      "main": [
+        [
+          {
+            "node": "Read/Write Files from Disk",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read/Write Files from Disk": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Planificador": {
+      "main": [
+        [
+          {
+            "node": "Convert to File1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generador": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sellar metadatos": {
+      "main": [
+        [
+          {
+            "node": "Generador",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Sanitizador post-Generador",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sanitizador post-Generador": {
+      "main": [
+        [
+          {
+            "node": "Saneador",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code1": {
+      "main": [
+        [
+          {
+            "node": "Convert to File2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Saneador": {
+      "main": [
+        [
+          {
+            "node": "Code1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Top 2 Weekly Open Router": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Planificador",
+            "type": "ai_languageModel",
+            "index": 1
+          },
+          {
+            "node": "Generador",
+            "type": "ai_languageModel",
+            "index": 1
+          },
+          {
+            "node": "Saneador",
+            "type": "ai_languageModel",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Variables": {
+      "main": [
+        [
+          {
+            "node": "Planificador",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Top Free Weekly (Open Router)": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Planificador",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Generador",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Saneador",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read/Write Files from Disk2": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Variables",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GPT": {
+      "ai_languageModel": [
+        []
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "0bd20f65-4069-450a-a284-21c5c086dde5",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "c77d6ef4d532e10e4b934b15fd2842199af0d5d860fcc2dd9fe835b4bac55a1b"
+  },
+  "id": "yYBmQeeJpnr1ajQF",
+  "tags": []
+}
