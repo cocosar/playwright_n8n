@@ -24,6 +24,43 @@ Proyecto para automatizar pruebas web con Playwright integrado en un entorno de 
 - `tests/`: specs de ejemplo generados para validaciones iniciales.
 - `ai/`: prompts que orquestan comportamiento de agentes (planner, generator, sanitizer, healer).
 
+## Flujo n8n (Agentes Playwright v2)
+
+El workflow `Agentes Playwright v2.json` implementa un pipeline de generacion y validacion de tests por escenario, con ciclo de curacion cuando falla la ejecucion.
+
+```mermaid
+flowchart LR
+  A[Manual Trigger] --> B[Read prompts from /workspace/ai/*]
+  B --> C[Code in JavaScript\nparse prompts]
+  C --> D[Variables\nurl + contexto + prompts]
+  D --> E[Planificador]
+  E --> F[Convert to File\nplan-de-pruebas.md]
+  F --> G[Write /workspace/plan-de-pruebas.md]
+  G --> H[Code\nsplit por escenarios]
+  H --> I[Loop Over Items]
+
+  I --> J[Sellar metadatos\n__site __idx __title]
+  J --> K[Generador]
+  J --> L[Merge metadatos + output]
+  K --> L
+  L --> M[Sanitizador post-Generador]
+  M --> N[Sanitizador]
+  N --> O[Post Sanitizador]
+  O --> P[Convert to File\n.spec.ts]
+  P --> Q[Guardado de Test\n/workspace/tests]
+  Q --> R[Ejecucion de Tests]
+  R --> S{Hay fallos?}
+
+  S -- Si --> T[Healer]
+  T --> L
+  S -- No --> I
+```
+
+Notas del diagrama:
+- Los agentes `Planificador`, `Generador`, `Sanitizador` y `Healer` comparten modelos de OpenRouter y herramientas MCP.
+- El flujo principal procesa un escenario por iteracion (`Loop Over Items`) hasta completar el plan.
+- Si `Ejecucion de Tests` detecta fallos, entra al ciclo `If -> Healer -> Merge` para corregir y reintentar.
+
 ## Requisitos
 
 - Docker y Docker Compose.
